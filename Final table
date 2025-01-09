@@ -1,0 +1,103 @@
+CREATE OR REPLACE PROCEDURE `your_project_id.your_dataset_id.sp_final_table_performance`(
+    process_ts STRING,
+    trans_ts STRING,
+    window_hour INT64,
+    window_interval INT64
+)
+BEGIN
+    -- Variables to track performance metrics
+    DECLARE inserted_count INT64 DEFAULT 0;
+    DECLARE updated_count INT64 DEFAULT 0;
+
+    -- Perform the MERGE operation to insert/update the final table
+    MERGE `your_project_id.your_dataset_id.final_table` AS f
+    USING (
+        SELECT 
+            metric_name,
+            metric_sum_value,
+            metric_increase_value,
+            metric_rate_value,
+            labels,
+            fqdn,
+            function_name,
+            event_time,
+            trans_dt
+        FROM `your_project_id.your_dataset_id.curated_table`
+        WHERE TIMESTAMP(event_time) BETWEEN TIMESTAMP(trans_ts) 
+              AND TIMESTAMP(process_ts)
+    ) AS v
+    ON f.metric_name = v.metric_name
+       AND f.fqdn = v.fqdn
+       AND f.function_name = v.function_name
+       AND f.event_time = v.event_time
+    WHEN MATCHED AND (
+        f.metric_sum_value != v.metric_sum_value OR
+        f.metric_increase_value != v.metric_increase_value OR
+        f.metric_rate_value != v.metric_rate_value OR
+        f.labels != v.labels OR
+        f.trans_dt != v.trans_dt
+    )
+    THEN
+        UPDATE SET 
+            f.metric_sum_value = v.metric_sum_value,
+            f.metric_increase_value = v.metric_increase_value,
+            f.metric_rate_value = v.metric_rate_value,
+            f.labels = v.labels,
+            f.trans_dt = v.trans_dt,
+            f.updated_at = CURRENT_TIMESTAMP()
+    WHEN NOT MATCHED THEN
+        INSERT (
+            metric_name,
+            metric_sum_value,
+            metric_increase_value,
+            metric_rate_value,
+            labels,
+            fqdn,
+            function_name,
+            event_time,
+            trans_dt,
+            created_at,
+            updated_at
+        )
+        VALUES (
+            v.metric_name,
+            v.metric_sum_value,
+            v.metric_increase_value,
+            v.metric_rate_value,
+            v.labels,
+            v.fqdn,
+            v.function_name,
+            v.event_time,
+            v.trans_dt,
+            CURRENT_TIMESTAMP(),
+            CURRENT_TIMESTAMP()
+        );
+
+    -- Track the number of rows inserted
+    SET inserted_count = (SELECT COUNT(*) 
+                          FROM `your_project_id.your_dataset_id.final_table` 
+                          WHERE created_at = CURRENT_TIMESTAMP());
+
+    -- Track the number of rows updated
+    SET updated_count = (SELECT COUNT(*) 
+                         FROM `your_project_id.your_dataset_id.final_table` 
+                         WHERE updated_at = CURRENT_TIMESTAMP() 
+                               AND created_at != updated_at);
+
+    -- Log performance metrics to the audit table
+    INSERT INTO `your_project_id.your_dataset_id.audit_log` (
+        execution_time,
+        table_name,
+        records_inserted,
+        records_updated,
+        status
+    )
+    VALUES (
+        CURRENT_TIMESTAMP(),
+        'final_table',
+        inserted_count,
+        updated_count,
+        'SUCCESS'
+    );
+
+END;

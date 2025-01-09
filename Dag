@@ -1,0 +1,136 @@
+from datetime import datetime, timedelta
+from functools import partial
+from airflow import DAG
+import os
+import sys
+import yaml
+from airflow.providers.google.cloud.operators.bigquery import BigQueryInsertJobOperator
+from airflow.operators.dummy import DummyOperator
+
+# Folder and paths
+folder = 'ericsson_upf'
+BASE_DIR = "/home/airflow/gcs/dags/vz-it-gudv-dtwndo-0"
+sys.path.append(f"{BASE_DIR}/{folder}/python")
+
+from DO_utils import publishLog, create_do_dict
+
+# Load configurations
+project = os.environ['GCP_PROJECT']
+with open(f"{BASE_DIR}/{folder}/config/base_config.yml", 'r') as file:
+    base_config = yaml.full_load(file)
+
+with open(f"{BASE_DIR}/{folder}/config/aether_core_upf_final.yml", 'r') as file:  # Update with final table config
+    dag_config = yaml.full_load(file)
+
+config_values = {}
+
+# Filter base config
+filtered_base_dict = dict(filter(lambda elem: elem[0] == project, base_config.items()))
+filtered_dict = dict(filter(lambda elem: elem[0] == project, dag_config.items()))
+
+if len(filtered_base_dict) > 0:
+    base_value = filtered_base_dict[project][0]
+    config_values = {**config_values, **base_value}
+else:
+    print("No config found exiting..")
+    sys.exit(-1)
+
+if len(filtered_dict) > 0:
+    app_value = filtered_dict[project][0]
+    config_values = {**config_values, **app_value}
+else:
+    print("No config found exiting..")
+    sys.exit(-1)
+
+# Extract config values
+GCP_PROJECT_ID = config_values['gcp_project']
+bq_connection_id = config_values['google_cloud_conn_id']
+region = config_values['region']
+DAG_ID = config_values['dag_id']
+base_directory = config_values['base_directory']
+env = config_values['env']
+dataset_id = config_values['dataset_id']
+stored_proc_curated = config_values['stored_proc_curated']
+stored_proc_final = config_values['stored_proc_final']  # For final table
+table_name = config_values['table_name']
+schedule_interval = config_values['schedule_interval']
+failure_email_alert_distro = config_values['failure_email_alert_distro']
+window_hour = config_values['window_hour']
+window_interval = config_values['window_interval']
+
+# Define processing timestamps
+process_ts = '{{ data_interval_end.strftime("%Y-%m-%d %H:%M:%S") }}'
+trans_ts = '{{ data_interval_end.subtract(hours=1).strftime("%Y-%m-%d %H:%M:%S") }}'
+
+do_dict = create_do_dict(config_values)
+
+# Default arguments
+default_args = {
+    'owner': 'dtwin',
+    'depends_on_past': False,
+    'start_date': datetime(year=2024, month=9, day=6, hour=0, minute=0),
+    'email': [failure_email_alert_distro],
+    'email_on_failure': True,
+    'email_on_retry': False,
+    'retries': 0,
+    'retry_delay': timedelta(minutes=3)
+}
+
+# DAG definition
+dag = DAG(
+    dag_id=DAG_ID,
+    schedule_interval=schedule_interval,
+    catchup=True,
+    default_args=default_args,
+    description='This DAG processes data from curated to final table',
+    concurrency=int(config_values['concurrency']),
+    max_active_runs=int(config_values['max_active_runs']),
+    tags=["dtwin", "aether_core_5g"]
+)
+
+# Define start task
+start = DummyOperator(
+    task_id='start',
+    dag=dag,
+    on_success_callback=partial(publishLog, "PROGRESS", do_dict),
+    on_failure_callback=partial(publishLog, "FAILURE", do_dict)
+)
+
+# Task to call stored procedure for curated table
+call_aether_upf_performance_curated = BigQueryInsertJobOperator(
+    task_id="call_aether_upf_performance_curated",
+    dag=dag,
+    gcp_conn_id=bq_connection_id,
+    configuration={
+        "query": {
+            "query": f"CALL {dataset_id}.{stored_proc_curated}('{process_ts}','{trans_ts}',{window_hour},{window_interval})",
+            "useLegacySql": False,
+        }
+    },
+    on_failure_callback=partial(publishLog, "FAILURE", do_dict)
+)
+
+# Task to call stored procedure for final table
+call_aether_upf_performance_final = BigQueryInsertJobOperator(
+    task_id="call_aether_upf_performance_final",
+    dag=dag,
+    gcp_conn_id=bq_connection_id,
+    configuration={
+        "query": {
+            "query": f"CALL {dataset_id}.{stored_proc_final}('{process_ts}','{trans_ts}',{window_hour},{window_interval})",
+            "useLegacySql": False,
+        }
+    },
+    on_failure_callback=partial(publishLog, "FAILURE", do_dict)
+)
+
+# Define end task
+end = DummyOperator(
+    task_id='end',
+    dag=dag,
+    on_success_callback=partial(publishLog, "SUCCESS", do_dict),
+    on_failure_callback=partial(publishLog, "FAILURE", do_dict)
+)
+
+# Define task dependencies
+start >> call_aether_upf_performance_curated >> call_aether_upf_performance_final >> end

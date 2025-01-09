@@ -1,0 +1,80 @@
+CREATE OR REPLACE PROCEDURE sp_final_table_performance()
+BEGIN
+    -- Variables to track performance metrics
+    DECLARE inserted_count INT64 DEFAULT 0;
+    DECLARE updated_count INT64 DEFAULT 0;
+    DECLARE error_message STRING DEFAULT NULL;
+
+    -- Try-Catch Block for Error Handling (if supported by your SQL engine)
+    BEGIN
+        -- Insert new records into the final table
+        INSERT INTO final_table (
+            column1, column2, column3, column4, -- Replace with actual columns
+            updated_at -- Timestamp for tracking
+        )
+        SELECT
+            v.column1, v.column2, v.column3, v.column4, -- Replace with actual columns
+            CURRENT_TIMESTAMP() AS updated_at
+        FROM curated_view v
+        LEFT JOIN final_table f
+            ON v.primary_key = f.primary_key -- Match on primary key
+        WHERE f.primary_key IS NULL; -- Insert only new records
+
+        -- Track the number of inserted rows
+        SET inserted_count = ROW_COUNT();
+
+        -- Update existing records in the final table
+        UPDATE final_table f
+        SET 
+            f.column1 = v.column1,
+            f.column2 = v.column2,
+            f.column3 = v.column3,
+            f.updated_at = CURRENT_TIMESTAMP()
+        FROM curated_view v
+        WHERE f.primary_key = v.primary_key
+          AND (f.column1 != v.column1 OR f.column2 != v.column2 OR f.column3 != v.column3); -- Only update changed records
+
+        -- Track the number of updated rows
+        SET updated_count = ROW_COUNT();
+        
+        -- Optional: Log performance metrics into an audit table
+        INSERT INTO audit_log (
+            execution_time,
+            table_name,
+            records_inserted,
+            records_updated,
+            status,
+            error_message
+        )
+        VALUES (
+            CURRENT_TIMESTAMP(),
+            'final_table',
+            inserted_count,
+            updated_count,
+            'SUCCESS',
+            NULL
+        );
+
+    EXCEPTION WHEN OTHERS THEN
+        -- Capture error message
+        SET error_message = ERROR_MESSAGE();
+        
+        -- Log error to the audit table
+        INSERT INTO audit_log (
+            execution_time,
+            table_name,
+            records_inserted,
+            records_updated,
+            status,
+            error_message
+        )
+        VALUES (
+            CURRENT_TIMESTAMP(),
+            'final_table',
+            inserted_count,
+            updated_count,
+            'FAILED',
+            error_message
+        );
+    END;
+END;

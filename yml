@@ -1,0 +1,28 @@
+vz-it-np-wdwg-dev-aidcom-0:
+  - dag_id: gudv_ndtwin_aether_core_smf_performance_summary
+    dataset_id: aid_nwperf_aether_core_tbls
+    stored_proc: aether_smf_performance_summary_sp
+    table_name: aether_smf_performance_summary
+    schedule_interval: "35 * * * *"
+    source_name: vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_smf_performance_derived
+    source_type: View
+    target_name: vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_smf_performance_summary
+    target_type: Table
+    frequency: hourly
+    window_hour: 1
+    window_interval: 1
+    
+vz-it-pr-wdwg-aidcom-0:
+  - dag_id: gudv_ndtwin_aether_core_smf_performance_summary
+    dataset_id: aid_nwperf_aether_core_tbls
+    stored_proc: aether_smf_performance_summary_sp
+    table_name: aether_smf_performance_summary
+    schedule_interval: "35 * * * *"
+    source_name: vz-it-pr-gudv-dtwndo-0.aid_nwperf_aether_core_tbls.aether_smf_performance_derived
+    source_type: View
+    target_name: vz-it-pr-gudv-dtwndo-0.aid_nwperf_aether_core_tbls.aether_smf_performance_summary
+    target_type: Table
+    frequency: hourly
+    window_hour: 1
+    window_interval: 1
+    

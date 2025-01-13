@@ -1,0 +1,86 @@
+from datetime import timedelta, datetime
+from google.cloud import logging as gcloud_log
+import pytz
+
+def publishLog(status,do_dict,log_context):
+    dict_obs = {}
+    dag_id = log_context['ti'].dag_id
+    run_id = log_context['ti'].run_id
+    task_state = log_context['ti'].current_state()
+    task_start_time = log_context['ti'].start_date
+    task_end_time = log_context['ti'].end_date
+    data_interval_end = log_context['data_interval_end']
+    dict_obs['running_instance_id'] = run_id
+    if status == 'PROGRESS':
+        dict_obs["end_time"] = ""
+    else:
+        dict_obs["end_time"] = str(task_end_time.strftime("%Y-%m-%dT%H:%M:%S"))
+    if  status == 'FAILURE':
+        exception = str(log_context['exception'])
+    else:
+        exception = "NA"
+    dict_obs['error_message'] = exception
+    dict_obs["keyvalue"] = "NA"
+    dict_obs['logfile'] = log_context['ti'].log_url
+    dict_obs["run_date"] = str(data_interval_end.strftime("%Y%m%d"))
+    dict_obs["run_hour"] = str(log_context['dag_run'].data_interval_end.strftime("%H:%M:%S"))
+    dict_obs["start_time"] =  str(log_context['dag_run'].start_date.strftime("%Y-%m-%dT%H:%M:%S"))
+    dict_obs["process_start_time"] = str(task_start_time.strftime("%Y-%m-%d"))
+    dict_obs["process_end_time"] = str(task_end_time.strftime("%Y-%m-%dT%H:%M:%S"))
+    dict_obs["run_day"] = str(data_interval_end.strftime('%A'))
+    dict_obs['dag_id']=dag_id
+    dict_obs['run_status']=status
+    dict_obs['inserted_timestamp']= str(datetime.now(tz=pytz.UTC).strftime("%Y-%m-%dT%H:%M:%S"))
+    dict_obs['process_date']= str(task_start_time.strftime("%Y-%m-%d"))
+    # Below are kept as blank to maintain full lis of jsonpayload.
+    # These will be overwritten by do_dict coming from DAG code
+    dict_obs['rerun_indicator']=""
+    dict_obs['gcp_project']= ""
+    dict_obs['process_name']= ""
+    dict_obs['project_name']= ""
+    dict_obs['scheduler']= ""
+    dict_obs['source_count']= ""
+    dict_obs['source_name']= ""
+    dict_obs['source_type']= ""
+    dict_obs['sub_process']= ""
+    dict_obs['system_name']= ""
+    dict_obs['target_count']= ""
+    dict_obs['target_name']= ""
+    dict_obs['target_type']= ""
+    dict_obs['tool_name']= ""
+    dict_obs['frequency']= ""
+    dict_obs['source_servername']=""
+    dict_obs['target_servername']=""
+    dict_obs['application_name']=""
+    dict_obs['target_environment']=""
+
+    logging_client = gcloud_log.Client()
+    logger_name = 'dof_gcp_process_log'
+    logger = logging_client.logger(logger_name)
+    log_values = {**dict_obs, **do_dict}
+    logger.log_struct(log_values)
+    for k, v in log_values.items():
+        print(k, v)
+
+def create_do_dict(config_values):
+    do_dict = {}
+    do_dict['gcp_project'] = config_values['gcp_project']
+    do_dict['rerun_indicator'] = "N"
+    do_dict['process_name'] = config_values['dag_id']
+    do_dict['project_name'] = config_values['project_name']
+    do_dict['scheduler'] = "Airflow"
+    do_dict['source_count'] = "0"
+    do_dict['source_name'] = config_values['source_name']
+    do_dict['source_type'] = config_values['source_type']
+    do_dict['sub_process'] = config_values['dag_id'] #As process and subprocess is same in metadata
+    do_dict['system_name'] = config_values['system_name']
+    do_dict['target_count'] = "0"
+    do_dict['target_name'] = config_values['target_name']
+    do_dict['target_type'] = config_values['target_type']
+    do_dict['tool_name'] = config_values['tool_name']
+    do_dict['frequency'] = config_values['frequency']
+    do_dict['source_servername'] = config_values['source_servername']
+    do_dict['target_servername'] = config_values['target_servername']
+    do_dict['application_name'] = config_values['application_name']
+    do_dict['target_environment'] = config_values['target_environment']
+    return do_dict

@@ -1,0 +1,58 @@
+-- Step 1: Extract primary and secondary mappings
+WITH primary_secondary_mapping AS (
+  SELECT
+    UPPER(site_clli) AS primary_clli,
+    UPPER(pair) AS secondary_clli,
+    site_name,
+    region,
+    latitude,
+    longitude
+  FROM 
+    `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.sap_site_mapping`
+),
+
+-- Step 2: Add a column to determine the CLLI for each FQDN
+fqdn_clli_mapping AS (
+  SELECT
+    st.trans_dt,
+    st.fqdn,
+    st.vendor,
+    st.metric_name,
+    st.value,
+    -- Determine CLLI for primary or secondary FQDNs
+    CASE
+      WHEN st.fqdn LIKE '%consp%' THEN UPPER(SUBSTR(st.fqdn, 1, 8)) -- Primary FQDN
+      ELSE NULL -- Placeholder for secondary logic
+    END AS primary_clli,
+    CASE
+      WHEN st.fqdn LIKE '%conss%' THEN UPPER(SUBSTR(st.fqdn, 1, 8)) -- Secondary FQDN
+      ELSE NULL -- Placeholder for primary logic
+    END AS secondary_clli
+  FROM 
+    `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_smf_performance_summary_test` st
+),
+
+-- Step 3: Join with the primary and secondary mappings
+final_result AS (
+  SELECT
+    fc.trans_dt,
+    fc.fqdn,
+    fc.vendor,
+    fc.metric_name,
+    fc.value,
+    COALESCE(fc.primary_clli, pm.primary_clli) AS clli, -- Use primary CLLI or mapped secondary CLLI
+    pm.site_name,
+    pm.region,
+    pm.latitude,
+    pm.longitude
+  FROM
+    fqdn_clli_mapping fc
+  LEFT JOIN
+    primary_secondary_mapping pm
+  ON 
+    fc.primary_clli = pm.primary_clli -- Join on primary CLLI
+    OR fc.secondary_clli = pm.secondary_clli -- Join on secondary CLLI
+)
+
+-- Step 4: Output the final result
+SELECT * FROM final_result;

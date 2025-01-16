@@ -1,0 +1,38 @@
+-- Assuming summary_test table and static_table are present in the database
+
+SELECT 
+    st.trans_dt,
+    st.fqdn,
+    st.vendor,
+    st.metric_name,
+    st.value,
+    -- Mapping logic for CLLI
+    CASE
+        WHEN st.fqdn LIKE '%consp%' THEN UPPER(SUBSTR(st.fqdn, 1, 8))
+        WHEN st.fqdn LIKE '%conss%' THEN (
+            SELECT clli 
+            FROM static_table 
+            WHERE UPPER(clli) = UPPER(SUBSTR(st.fqdn, 1, 8))
+            LIMIT 1
+        )
+        ELSE NULL
+    END AS clli,
+    -- Adding region, latitude, and longitude
+    t.region,
+    t.latitude,
+    t.longitude
+FROM 
+    summary_test st
+LEFT JOIN 
+    static_table t
+ON 
+    t.clli = CASE
+                WHEN st.fqdn LIKE '%consp%' THEN UPPER(SUBSTR(st.fqdn, 1, 8))
+                WHEN st.fqdn LIKE '%conss%' THEN (
+                    SELECT clli 
+                    FROM static_table 
+                    WHERE UPPER(clli) = UPPER(SUBSTR(st.fqdn, 1, 8))
+                    LIMIT 1
+                )
+                ELSE NULL
+             END;

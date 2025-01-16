@@ -1,0 +1,48 @@
+-- Step 1: Create a mapping table for primary and secondary FQDNs
+WITH primary_secondary_mapping AS (
+  SELECT
+    site_clli AS clli,
+    UPPER(SUBSTR(site_clli, 1, 8)) AS clli_key,
+    site_name,
+    region,
+    latitude,
+    longitude
+  FROM 
+    `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.sap_site_mapping`
+),
+
+-- Step 2: Add a column to determine CLLI based on FQDN type
+fqdn_clli_mapping AS (
+  SELECT
+    st.trans_dt,
+    st.fqdn,
+    st.vendor,
+    st.metric_name,
+    st.value,
+    CASE
+      WHEN st.fqdn LIKE '%consp%' THEN UPPER(SUBSTR(st.fqdn, 1, 8)) -- Primary FQDN
+      WHEN st.fqdn LIKE '%conss%' THEN UPPER(SUBSTR(st.fqdn, 1, 8)) -- Secondary FQDN
+      ELSE NULL
+    END AS clli_key
+  FROM 
+    `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_smf_performance_summary_test` st
+)
+
+-- Step 3: Join with the mapping table
+SELECT
+  fc.trans_dt,
+  fc.fqdn,
+  fc.vendor,
+  fc.metric_name,
+  fc.value,
+  fc.clli_key AS clli,
+  psm.site_name,
+  psm.region,
+  psm.latitude,
+  psm.longitude
+FROM 
+  fqdn_clli_mapping fc
+LEFT JOIN 
+  primary_secondary_mapping psm
+ON 
+  fc.clli_key = psm.clli_key;

@@ -1,0 +1,132 @@
+                                       5G-Enhancement
+Implementation steps:
+1.Create a static table -SAP_SITE_MAPPING(requires classification)
+convert derived view to derived table along with mapping logic
+Key changes:
+Classify fqdn to primary or secondary map with its primary clli
+Split key_group column to group_key and group_value
+Add event_time_local column (convert the utc time to the timezone of its primary)
+Add fqdn_type column to specify if it is primary or secondary
+Cluster by vendor, region,site_name
+derived_table(column_name)
+
+field name	                 type	
+trans_dt		       DATE	
+event_time		       TIMESTAMP	
+local_event_time                DATETIME	
+fqdn		                   STRING	
+vendor		                   STRING	
+Metric_name                      STRING	
+value		                   FLOAT	
+Group_key                         STRING
+Group_value                      STRING
+fqdn_type		       STRING	
+clli		                   STRING	
+site_name		       STRING	
+region		                   STRING	
+latitude		                   FLOAT	
+longitude		       FLOAT	
+
+
+
+CREATE or replace TABLE `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_smf_performance_middle_tbl`
+PARTITION BY trans_dt
+CLUSTER BY vendor, region, site_name
+OPTIONS(require_partition_filter=true)
+AS
+WITH fqdn_classification AS (
+  SELECT
+    st.trans_dt,
+    st.event_time,
+    st.fqdn,
+    st.vendor,
+    st.metric_name,
+    st.value,
+    CASE
+      WHEN st.fqdn LIKE '%ec-p%' OR fqdn LIKE '%consp%' OR fqdn LIKE '%entrp%'or fqdn LIKE'%entpp%'  THEN 'primary'
+      WHEN st.fqdn  LIKE '%ec-s%' OR fqdn LIKE '%conss%' OR fqdn LIKE '%entrs%'or fqdn LIKE '%entps%' THEN 'secondary'
+      ELSE NULL
+    END AS fqdn_type,
+    UPPER(SUBSTR(st.fqdn, 1, 8)) AS clli_base -- Extract the first 8 characters
+  FROM
+    `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_smf_performance_summary_test` st
+)
+SELECT
+  f.trans_dt,
+  f.event_time,
+  DATETIME(TIMESTAMP(f.event_time), pm.timezone) AS local_event_time,
+  f.fqdn,
+  f.vendor,
+  f.metric_name,
+  f.value,
+  f.fqdn_type, 
+  CASE
+    WHEN f.fqdn_type = 'primary' AND pm.primary_clli IS NOT NULL THEN pm.primary_clli    WHEN f.fqdn_type = 'secondary'AND pm.secondary_clli IS NOT NULL       THEN pm.primary_clli 
+    ELSE 'lab-element'------no mapping devices
+  END AS clli,
+  pm.site_name,
+  pm.region,
+  pm.latitude,
+  pm.longitude
+FROM
+  fqdn_classification f
+LEFT JOIN (
+  SELECT
+    UPPER(site_clli) AS primary_clli,
+    UPPER(pair) AS secondary_clli,
+    site_name,
+    region,
+    latitude,
+    longitude,
+    timezone
+  FROM `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.sap_site_mapping`
+) pm
+ON
+  -- Use fqdn_type to differentiate between primary and secondary
+  (f.fqdn_type = 'primary' AND f.clli_base = pm.primary_clli)
+  OR (f.fqdn_type = 'secondary' AND f.clli_base = pm.secondary_clli)
+   WHERE trans_dt is not null;
+
+
+
+
+ 
+2.Create view on top of the derived table - UTILIZATION_VIEW-requiries classification(hourly based) for only the listed KPIs
+Consolidate -smf,upf
+In_ipv4_bytes
+In_ipv6_bytes
+Out_ipv4_bytes
+Out_ipv6_bytes
+Active_session
+ggsn_nbr_of_subscribers
+
+
+
+Create or replace view `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_smf_performance_utilization_view_2` as
+select * from `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_smf_performance_middle_tbl`
+
+
+
+
+
+
+
+utilization_view(column_names)
+
+field name		       type	
+trans_dt		       DATE	
+event_time		       TIMESTAMP	
+local_event_time	       DATETIME	
+fqdn		                   STRING	
+vendor		                   STRING	
+metric_name		       STRING	
+value		                   FLOAT	
+Group_key                         STRING
+Group_value                      STRING
+fqdn_type		       STRING	
+clli		                   STRING	
+site_name		       STRING	
+region		                   STRING	
+latitude		                   FLOAT	
+longitude		       FLOAT	
+

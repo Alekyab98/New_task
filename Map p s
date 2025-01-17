@@ -1,0 +1,47 @@
+CREATE TABLE `project_id.dataset_id.middle_table`
+PARTITION BY trans_dt
+CLUSTER BY vendor, region, site_name
+AS
+SELECT
+  st.trans_dt,
+  st.event_time,
+  DATETIME(TIMESTAMP(st.event_time), pm.time_zone) AS local_event_time,
+  st.fqdn,
+  st.vendor,
+  st.metric_name,
+  st.value,
+  CASE
+    -- Check if FQDN is primary (contains "consp")
+    WHEN st.fqdn LIKE '%consp%' THEN UPPER(SUBSTR(st.fqdn, 1, 8))
+    -- Check if FQDN is secondary (contains "conss")
+    WHEN st.fqdn LIKE '%conss%' THEN pm.primary_clli
+    ELSE NULL
+  END AS clli,
+  pm.site_name,
+  pm.region,
+  pm.latitude,
+  pm.longitude
+FROM
+  `project_id.dataset_id.summary_test` st
+LEFT JOIN (
+  -- Mapping table with primary and secondary logic
+  SELECT
+    UPPER(site_clli) AS primary_clli,
+    UPPER(pair) AS secondary_clli,
+    site_name,
+    region,
+    latitude,
+    longitude,
+    CASE
+      WHEN site_name = 'Tempe' THEN 'America/Phoenix'
+      WHEN site_name = 'Pembroke Pines' THEN 'America/New_York'
+      WHEN site_name = 'Whites Creek' THEN 'America/Chicago'
+      ELSE 'UTC'
+    END AS time_zone
+  FROM `project_id.dataset_id.sap_site_mapping`
+) pm
+ON 
+  -- Match primary FQDN to site_clli
+  (st.fqdn LIKE '%consp%' AND UPPER(SUBSTR(st.fqdn, 1, 8)) = pm.primary_clli)
+  -- Match secondary FQDN to pair column
+  OR (st.fqdn LIKE '%conss%' AND UPPER(SUBSTR(st.fqdn, 1, 8)) = pm.secondary_clli);

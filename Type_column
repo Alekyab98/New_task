@@ -1,0 +1,59 @@
+WITH fqdn_classification AS (
+  SELECT
+    st.trans_dt,
+    st.event_time,
+    st.fqdn,
+    st.vendor,
+    st.metric_name,
+    st.value,
+    -- Determine if the FQDN is primary or secondary
+    CASE
+      WHEN st.fqdn LIKE '%consp%' THEN 'primary'
+      WHEN st.fqdn LIKE '%conss%' THEN 'secondary'
+      ELSE NULL
+    END AS fqdn_type,
+    UPPER(SUBSTR(st.fqdn, 1, 8)) AS clli_base -- Extract the first 8 characters
+  FROM
+    `project_id.dataset_id.summary_test` st
+)
+SELECT
+  f.trans_dt,
+  f.event_time,
+  DATETIME(TIMESTAMP(f.event_time), pm.time_zone) AS local_event_time,
+  f.fqdn,
+  f.vendor,
+  f.metric_name,
+  f.value,
+  f.fqdn_type, -- Include FQDN type (primary/secondary)
+  -- Assign the correct CLLI based on primary or secondary
+  CASE
+    WHEN f.fqdn_type = 'primary' THEN f.clli_base -- Primary FQDN
+    WHEN f.fqdn_type = 'secondary' THEN pm.primary_clli -- Secondary FQDN
+    ELSE NULL
+  END AS clli,
+  pm.site_name,
+  pm.region,
+  pm.latitude,
+  pm.longitude
+FROM
+  fqdn_classification f
+LEFT JOIN (
+  SELECT
+    UPPER(site_clli) AS primary_clli,
+    UPPER(pair) AS secondary_clli,
+    site_name,
+    region,
+    latitude,
+    longitude,
+    CASE
+      WHEN site_name = 'Tempe' THEN 'America/Phoenix'
+      WHEN site_name = 'Pembroke Pines' THEN 'America/New_York'
+      WHEN site_name = 'Whites Creek' THEN 'America/Chicago'
+      ELSE 'UTC'
+    END AS time_zone
+  FROM `project_id.dataset_id.sap_site_mapping`
+) pm
+ON 
+  -- Use fqdn_type to differentiate between primary and secondary
+  (f.fqdn_type = 'primary' AND f.clli_base = pm.primary_clli)
+  OR (f.fqdn_type = 'secondary' AND f.clli_base = pm.secondary_clli);

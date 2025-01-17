@@ -1,0 +1,153 @@
+5G-Enhancement Implementation Steps
+Overview
+This document outlines the steps and details for implementing the 5G enhancement, including the creation of static and derived tables, as well as the views required for specific classifications and metrics. The deliverables include a middle table (`aether_smf_performance_middle_tbl`) and a utilization view (`aether_smf_performance_utilization_view_2`), along with their associated schemas and business logic.
+1. Create Static Table: SAP_SITE_MAPPING
+Purpose: This table provides mapping logic for classifying FQDNs into primary or secondary and associating them with their primary CLLI.
+Implementation Steps:
+1. Classify `fqdn` as primary or secondary and map it to its primary `clli`.
+2. Split `key_group` into `group_key` and `group_value`.
+3. Add `event_time_local` column by converting UTC timestamps into their respective time zones.
+4. Add `fqdn_type` column to specify if the `fqdn` is primary or secondary.
+5. Cluster the table by `vendor`, `region`, and `site_name` for optimized querying.
+2. Create Derived Table: AETHER_SMF_PERFORMANCE_MIDDLE_TBL
+Schema:
+Field Name
+Type
+trans_dt
+DATE
+event_time
+TIMESTAMP
+local_event_time
+DATETIME
+fqdn
+STRING
+vendor
+STRING
+metric_name
+STRING
+value
+FLOAT
+group_key
+STRING
+group_value
+STRING
+fqdn_type
+STRING
+clli
+STRING
+site_name
+STRING
+region
+STRING
+latitude
+FLOAT
+longitude
+FLOAT
+SQL to Create Table:
+CREATE OR REPLACE TABLE `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_smf_performance_middle_tbl`
+PARTITION BY trans_dt
+CLUSTER BY vendor, region, site_name
+OPTIONS(require_partition_filter = true)
+AS
+WITH fqdn_classification AS (
+ SELECT
+   st.trans_dt,
+   st.event_time,
+   st.fqdn,
+   st.vendor,
+   st.metric_name,
+   st.value,
+   CASE
+     WHEN st.fqdn LIKE '%ec-p%' OR fqdn LIKE '%consp%' OR fqdn LIKE '%entrp%' OR fqdn LIKE '%entpp%' THEN 'primary'
+     WHEN st.fqdn LIKE '%ec-s%' OR fqdn LIKE '%conss%' OR fqdn LIKE '%entrs%' OR fqdn LIKE '%entps%' THEN 'secondary'
+     ELSE NULL
+   END AS fqdn_type,
+   UPPER(SUBSTR(st.fqdn, 1, 8)) AS clli_base
+ FROM
+   `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_smf_performance_summary_test` st
+)
+SELECT
+ f.trans_dt,
+ f.event_time,
+ DATETIME(TIMESTAMP(f.event_time), pm.timezone) AS local_event_time,
+ f.fqdn,
+ f.vendor,
+ f.metric_name,
+ f.value,
+ f.fqdn_type,
+ CASE
+   WHEN f.fqdn_type = 'primary' AND pm.primary_clli IS NOT NULL THEN pm.primary_clli
+   WHEN f.fqdn_type = 'secondary' AND pm.secondary_clli IS NOT NULL THEN pm.primary_clli
+   ELSE 'lab-element'
+ END AS clli,
+ pm.site_name,
+ pm.region,
+ pm.latitude,
+ pm.longitude
+FROM
+ fqdn_classification f
+LEFT JOIN (
+ SELECT
+   UPPER(site_clli) AS primary_clli,
+   UPPER(pair) AS secondary_clli,
+   site_name,
+   region,
+   latitude,
+   longitude,
+   timezone
+ FROM `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.sap_site_mapping`
+) pm
+ON
+ (f.fqdn_type = 'primary' AND f.clli_base = pm.primary_clli)
+ OR (f.fqdn_type = 'secondary' AND f.clli_base = pm.secondary_clli)
+WHERE trans_dt IS NOT NULL;
+ETA for Completion: 2 Days
+3. Create Utilization View: UTILIZATION_VIEW
+Purpose: Provides hourly-based classifications for specific KPIs, consolidating data for `smf` and `upf`.
+Required KPIs:
+1. in_ipv4_bytes
+2. in_ipv6_bytes
+3. out_ipv4_bytes
+4. out_ipv6_bytes
+5. active_session
+6. ggsn_nbr_of_subscribers
+Schema:
+Field Name
+Type
+trans_dt
+DATE
+event_time
+TIMESTAMP
+local_event_time
+DATETIME
+fqdn
+STRING
+vendor
+STRING
+metric_name
+STRING
+value
+FLOAT
+group_key
+STRING
+group_value
+STRING
+fqdn_type
+STRING
+clli
+STRING
+site_name
+STRING
+region
+STRING
+latitude
+FLOAT
+longitude
+FLOAT
+SQL to Create View:
+CREATE OR REPLACE VIEW `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_smf_performance_utilization_view_2` AS
+SELECT *
+FROM `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_smf_performance_middle_tbl`;
+ETA for Completion: 1 Day
+Final ETA for Delivery
+Total Time Required: 3 Days (2 Days for the middle table and 1 Day for the utilization view).

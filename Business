@@ -1,0 +1,20 @@
+Here’s a concise version of your content expressed as business requirements:
+
+Business Requirements for CLLI Mapping and Dashboard Creation:
+	1.	CLLI Mapping for Querying:
+	•	Enable seamless querying by mapping the CLLI column to FQDNs.
+	•	For primary FQDNs, the first 8 characters of the FQDN will be used as the CLLI.
+	•	For secondary FQDNs, retrieve the CLLI from the corresponding primary FQDN using the pair column in the static table.
+	2.	Traffic Identification:
+	•	Ensure traffic originating from primary FQDNs retains the CLLI derived directly from its FQDN.
+	•	Map traffic from secondary FQDNs to the CLLI of the paired primary FQDN.
+	3.	Target Metrics for Capacity Management:
+	•	Create a mapped view to support key metrics for capacity management:
+	•	Metric Name
+	•	trans_dt
+	•	region
+	•	apn
+	4.	Dashboard Creation:
+	•	Enable users to build dashboards for capacity management using the mapped view and the identified key metrics.
+
+This structure clearly communicates the core requirements. Let me know if further refinements are needed!

@@ -1,0 +1,61 @@
+CREATE or replace TABLE `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_smf_performance_middle_tbl`
+PARTITION BY trans_dt
+CLUSTER BY vendor, region, site_name 
+OPTIONS(require_partition_filter=true)
+AS
+WITH fqdn_classification AS (
+  SELECT
+    st.trans_dt,
+    st.event_time,
+    st.fqdn,
+    st.vendor,
+    st.metric_name,
+    st.value,
+    json_extract_scalar(st.key_group, '$.group_by_key_name')  AS group_key,
+    json_extract_scalar(st.key_group, '$.group_by_key_value') AS group_value,
+    CASE
+      WHEN st.fqdn LIKE '%ec-p%' OR fqdn LIKE '%consp%' OR fqdn LIKE '%entrp%'or fqdn LIKE'%entpp%'  THEN 'primary'
+      WHEN st.fqdn  LIKE '%ec-s%' OR fqdn LIKE '%conss%' OR fqdn LIKE '%entrs%'or fqdn LIKE '%entps%' THEN 'secondary'
+      ELSE NULL
+    END AS fqdn_type,
+    UPPER(SUBSTR(st.fqdn, 1, 8)) AS clli_base 
+  FROM
+    `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_smf_performance_summary_test` st
+)
+SELECT
+  f.trans_dt,
+  f.event_time,
+  DATETIME(TIMESTAMP(f.event_time), pm.timezone) AS local_event_time,
+  f.fqdn,
+  f.vendor,
+  f.metric_name,
+  f.value,
+  f.group_key,
+  f.group_value,
+  f.fqdn_type, 
+  CASE
+    WHEN f.fqdn_type = 'primary' AND pm.primary_clli IS NOT NULL THEN pm.primary_clli 
+    WHEN f.fqdn_type = 'secondary'AND pm.secondary_clli IS NOT NULL THEN pm.primary_clli 
+    ELSE 'lab-element'
+  END AS clli,
+  pm.site_name,
+  pm.region,
+  pm.latitude,
+  pm.longitude
+FROM
+  fqdn_classification f
+LEFT JOIN (
+  SELECT
+    UPPER(site_clli) AS primary_clli,
+    UPPER(pair) AS secondary_clli,
+    site_name,
+    region,
+    latitude,
+    longitude,
+    timezone
+  FROM `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.sap_site_mapping`
+) pm
+ON 
+  (f.fqdn_type = 'primary' AND f.clli_base = pm.primary_clli)
+  OR (f.fqdn_type = 'secondary' AND f.clli_base = pm.secondary_clli)
+   WHERE trans_dt is not null;

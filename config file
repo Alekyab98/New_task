@@ -1,0 +1,35 @@
+vz-it-np-wdwg-dev-aidcom-0:
+  - gcp_project: vz-it-np-gudv-dev-dtwndo-0
+    google_cloud_conn_id: sa-vz-it-gudv-dtwndo-0-app
+    region: us-east4
+    env: dev
+    base_directory: gs://gudv-dev-dtwndo-0-usmr-warehouse/dtwin
+    latest_tag: gs://source_tag/temp
+    sub_process: call_aether_smf_performance_core
+    concurrency: 1
+    max_active_runs: 1
+    project_name: aether_5g_core
+    system_name: gudv_ndtwin
+    tool_name: GCP_BQ
+    source_servername: vz-it-pr-i37v-ndldo-0
+    target_servername: vz-it-np-gudv-dev-dtwndo-0
+    application_name: gudv_ndtwin
+    target_environment: GCP_BQ
+vz-it-pr-wdwg-aidcom-0:
+  - gcp_project: vz-it-pr-gudv-dtwndo-0
+    google_cloud_conn_id: sa-vz-it-gudv-dtwndo-0-app
+    env: prod
+    base_directory: gs://gudv-prod-dtwndo-0-usmr-warehouse/dtwin
+    region: us-east4
+    latest_tag: gs://source_tag/temp
+    failure_email_alert_distro: NDC-DTWIN-PROD-ALERTS@verizon.com
+    concurrency: 1
+    max_active_runs: 1
+    project_name: aether_5g_core
+    system_name: gudv_ndtwin
+    tool_name: GCP_BQ
+    source_servername: vz-it-pr-i37v-ndlpr-0
+    target_servername: vz-it-pr-gudv-dtwndo-0
+    application_name: gudv_ndtwin
+    target_environment: GCP_BQ
+    sub_process: call_aether_smf_performance_core

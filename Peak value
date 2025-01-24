@@ -1,0 +1,81 @@
+WITH ranked_smf_data AS (
+    SELECT 
+        metric_name,
+        region,
+        site_name,
+        group_value,
+        trans_dt,
+        EXTRACT(HOUR FROM event_time) AS hour, -- Extract the hour from the event time
+        SUM(value) AS total_value, -- Calculate the total value for the hour
+        RANK() OVER (
+            PARTITION BY metric_name, region, site_name, group_value, trans_dt -- Grouping combination
+            ORDER BY SUM(value) DESC -- Rank by the highest total value
+        ) AS rank
+    FROM 
+        `your_smf_table_name` -- Replace with your SMF table name
+    GROUP BY 
+        metric_name, region, site_name, group_value, trans_dt, hour
+),
+ranked_upf_data AS (
+    SELECT 
+        metric_name,
+        region,
+        site_name,
+        group_value,
+        trans_dt,
+        EXTRACT(HOUR FROM event_time) AS hour, -- Extract the hour from the event time
+        SUM(value) AS total_value, -- Calculate the total value for the hour
+        RANK() OVER (
+            PARTITION BY metric_name, region, site_name, group_value, trans_dt -- Grouping combination
+            ORDER BY SUM(value) DESC -- Rank by the highest total value
+        ) AS rank
+    FROM 
+        `your_upf_table_name` -- Replace with your UPF table name
+    GROUP BY 
+        metric_name, region, site_name, group_value, trans_dt, hour
+),
+smf_final_data AS (
+    SELECT 
+        t.*, -- Include all columns from the original SMF table
+        r.total_value AS peak_value, -- Include the calculated peak value
+        r.hour AS peak_hour -- Include the peak hour
+    FROM 
+        `your_smf_table_name` t
+    JOIN ranked_smf_data r
+        ON t.metric_name = r.metric_name
+           AND t.region = r.region
+           AND t.site_name = r.site_name
+           AND t.group_value = r.group_value
+           AND t.trans_dt = r.trans_dt
+           AND EXTRACT(HOUR FROM t.event_time) = r.hour
+    WHERE 
+        r.rank = 1 -- Select only the peak hour rows
+),
+upf_final_data AS (
+    SELECT 
+        t.*, -- Include all columns from the original UPF table
+        r.total_value AS peak_value, -- Include the calculated peak value
+        r.hour AS peak_hour -- Include the peak hour
+    FROM 
+        `your_upf_table_name` t
+    JOIN ranked_upf_data r
+        ON t.metric_name = r.metric_name
+           AND t.region = r.region
+           AND t.site_name = r.site_name
+           AND t.group_value = r.group_value
+           AND t.trans_dt = r.trans_dt
+           AND EXTRACT(HOUR FROM t.event_time) = r.hour
+    WHERE 
+        r.rank = 1 -- Select only the peak hour rows
+)
+SELECT 
+    * -- Select all columns from SMF
+FROM 
+    smf_final_data
+
+UNION ALL
+
+SELECT 
+    * -- Select all columns from UPF
+FROM 
+    upf_final_data;

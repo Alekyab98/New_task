@@ -1,0 +1,113 @@
+WITH ranked_smf_data AS (
+    SELECT 
+        metric_name,
+        region,
+        site_name,
+        DATE(event_time) AS event_date, -- Extract the date from event_time
+        group_key,
+        trans_dt,
+        SUM(value) AS total_value, -- Aggregate value for the combination
+        RANK() OVER ( -- Use RANK to allow for ties
+            PARTITION BY metric_name, region, site_name, group_key, DATE(event_time)
+            ORDER BY SUM(value) DESC
+        ) AS rank
+    FROM 
+       `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_smf_performance_middle_tbl`
+    WHERE 
+        trans_dt IS NOT NULL
+        AND LOWER(metric_name) IN ('active_sessions', 'total_subscribers') -- Add metrics filter
+    GROUP BY 
+        metric_name, region, site_name, group_key, trans_dt, DATE(event_time)
+),
+ranked_upf_data AS (
+    SELECT 
+        metric_name,
+        region,
+        site_name,
+        DATE(event_time) AS event_date, -- Extract the date from event_time
+        group_key,
+        trans_dt,
+        SUM(value) AS total_value, -- Aggregate value for the combination
+        RANK() OVER ( -- Use RANK to allow for ties
+            PARTITION BY metric_name, region, site_name, group_key, DATE(event_time)
+            ORDER BY SUM(value) DESC
+        ) AS rank
+    FROM 
+       `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_upf_performance_middle_tbl`
+    WHERE 
+        trans_dt IS NOT NULL
+        AND LOWER(metric_name) IN ('in_ipv4_bytes', 'in_ipv6_bytes', 'out_ipv4_bytes', 'out_ipv6_bytes') -- Add metrics filter
+    GROUP BY 
+        metric_name, region, site_name, group_key, trans_dt, DATE(event_time)
+),
+smf_final_data AS (
+    SELECT 
+        t.trans_dt,
+        r.event_date,
+        t.event_time,
+        t.local_event_time,
+        t.fqdn AS device_name,
+        t.fqdn_type AS device_type,
+        t.vendor,
+        t.metric_name,
+        r.total_value AS metric_value,
+        t.clli,
+        t.region,
+        t.site_name,
+        t.area,
+        t.market,
+        t.latitude,
+        t.longitude
+    FROM 
+        `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_smf_performance_middle_tbl` t
+    JOIN ranked_smf_data r
+        ON t.metric_name = r.metric_name
+           AND t.region = r.region
+           AND t.site_name = r.site_name
+           AND t.group_key = r.group_key
+           AND t.trans_dt = r.trans_dt
+           AND DATE(t.event_time) = r.event_date
+    WHERE 
+        r.rank = 1 -- Pick rows with the highest value for each combination
+),
+upf_final_data AS (
+    SELECT 
+        t.trans_dt,
+        r.event_date,
+        t.event_time,
+        t.local_event_time,
+        t.fqdn AS device_name,
+        t.fqdn_type AS device_type,
+        t.vendor,
+        t.metric_name,
+        r.total_value AS metric_value,
+        t.clli,
+        t.region,
+        t.site_name,
+        t.area,
+        t.market,
+        t.latitude,
+        t.longitude
+    FROM 
+        `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_upf_performance_middle_tbl` t
+    JOIN ranked_upf_data r
+        ON t.metric_name = r.metric_name
+           AND t.region = r.region
+           AND t.site_name = r.site_name
+           AND t.group_key = r.group_key
+           AND t.trans_dt = r.trans_dt
+           AND DATE(t.event_time) = r.event_date
+    WHERE 
+        r.rank = 1 -- Pick rows with the highest value for each combination
+)
+SELECT 
+    * -- Select all columns from SMF
+FROM 
+    smf_final_data
+
+UNION ALL
+
+SELECT 
+    * -- Select all columns from UPF
+FROM 
+    upf_final_data;

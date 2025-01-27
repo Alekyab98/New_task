@@ -1,0 +1,138 @@
+INSERT INTO `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_core_utilization_planning_tbls`
+WITH ranked_smf_data AS (
+    SELECT 
+        metric_name,
+        fqdn,
+        region,
+        primary_clli,
+        trans_dt,
+        event_time,
+        area,
+        group_value,
+        SUM(value) AS total_value, 
+        RANK() OVER ( 
+            PARTITION BY metric_name, region,primary_clli,trans_dt,area
+            ORDER BY SUM(value) DESC
+        ) AS rank
+    FROM 
+       `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_smf_performance_middle_tbl`
+    WHERE 
+        trans_dt ='2024-12-20'
+        AND LOWER(metric_name) IN ('active_sessions', 'total_subscribers')
+    GROUP BY 
+        metric_name, region, primary_clli, trans_dt,area,group_value,fqdn,
+        event_time
+),
+ranked_upf_data AS (
+    SELECT 
+        metric_name,
+        fqdn,
+        region,
+        primary_clli,
+        trans_dt,
+        area,
+        event_time,
+        group_value,
+        SUM(value) AS total_value, 
+        RANK() OVER ( 
+            PARTITION BY metric_name, region, primary_clli,trans_dt,area
+            ORDER BY SUM(value) DESC
+        ) AS rank
+    FROM 
+       `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_smf_performance_middle_tbl`
+    WHERE 
+        trans_dt ='2024-12-20'
+        AND LOWER(metric_name) IN ('in_ipv4_bytes', 'in_ipv6_bytes', 'out_ipv4_bytes', 'out_ipv6_bytes') -- Add metrics filter
+    GROUP BY 
+        metric_name, region, primary_clli, trans_dt,area,group_value,fqdn,
+        event_time
+),
+smf_final_data AS (
+    SELECT distinct 
+        t.trans_dt,
+        t.event_time,
+        t.local_event_time,
+        t.vendor,
+        r.fqdn AS device_name,
+        'smf'as function_name ,
+        t.metric_name,
+        r.total_value AS metric_value,
+        t.group_key,
+        r.group_value,
+        t.fqdn_type AS device_type,
+        r.primary_clli,
+        t.original_clli,
+        t.region,
+        t.site_name,
+        t.area,
+        t.market,
+        t.latitude,
+        t.longitude,
+        CURRENT_DATETIME as schedule_timestamp,
+        current_timestamp as updated_timestamp
+        
+    FROM 
+        `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_smf_performance_middle_tbl` t
+    JOIN ranked_smf_data r
+        ON t.metric_name = r.metric_name
+           AND t.region = r.region
+           AND t.primary_clli = r.primary_clli
+           AND t.trans_dt = r.trans_dt
+           AND t.event_time=r.event_time
+           AND t.group_value=r.group_value
+           AND t.fqdn = r.fqdn
+          
+    WHERE 
+        r.rank = 1 
+        and t.trans_dt ='2024-12-20'
+),
+upf_final_data AS (
+    SELECT distinct 
+        t.trans_dt,
+        t.event_time,
+        t.local_event_time,
+        r.fqdn AS device_name,
+        t.vendor,
+        'upf'as function_name ,
+        t.metric_name,
+        r.total_value AS metric_value,
+        t.group_key,
+        r.group_value,
+        t.fqdn_type AS device_type,
+        r.primary_clli,
+        t.original_clli,
+        t.region,
+        t.site_name,
+        t.area,
+        t.market,
+        t.latitude,
+        t.longitude,
+        CURRENT_DATETIME as schedule_timestamp,
+        current_timestamp as updated_timestamp
+        
+        
+    FROM 
+        `vz-it-np-gudv-dev-dtwndo-0.aid_nwperf_aether_core_tbls.aether_upf_performance_middle_tbl` t
+    JOIN ranked_upf_data r
+        ON t.metric_name = r.metric_name
+           AND t.region = r.region
+           AND t.primary_clli = r.primary_clli
+           AND t.trans_dt = r.trans_dt
+           AND t.event_time=r.event_time
+           AND t.group_value=r.group_value
+           AND t.fqdn = r.fqdn
+    WHERE 
+        r.rank = 1
+        and t.trans_dt ='2024-12-20'
+)
+SELECT 
+    * 
+FROM 
+    smf_final_data
+
+UNION ALL
+
+SELECT 
+    * 
+FROM 
+    upf_final_data;
